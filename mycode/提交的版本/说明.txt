@@ -1,0 +1,10 @@
+pip install pyocr
+pip install PIL
+ TESSDATA_PREFIX  C:\Program Files (x86)\Tesseract-OCR
+fontyp.traineddata   放在：C:\Program Files (x86)\Tesseract-OCR\tessdata
+运行OCR.py即可将屏幕上的某块区域图片转换成验证码文字
+
+
+PS:
+jTessBoxEditor-1.5是根据样本图片进行模型训练，并生成fontyp.traineddata的工具
+ActiveMouse.exe是获取屏幕坐标，以便在代码中指定截图区域的工具

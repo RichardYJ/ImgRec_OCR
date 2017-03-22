@@ -1,0 +1,3 @@
+---- delims Matches (2 in 0 files) ----
+2.py (d:\workspace\mycode\ocr\mine):def delims(image, numbers=4, index=0, rect=()):  # 分割
+2.py (d:\workspace\mycode\ocr\mine):        delims(process("./number/{0}".format(i)), numbers, index, rect);

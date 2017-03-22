@@ -1,0 +1,333 @@
+读代码最忌讳的是不抓结构抓细节，只见树木不见森林
+一、按层次一层一层往下读。每次只试着往下探索一层。如果我们只是需要概括性的了解，那么也许展开两层或三层，
+		就能够对程序有基础的认识。		倘若需要更深入的了解，就会需要展开更多的层次才行。了解每个文件夹和目录下
+		是哪个模块的内容。我们强调一种不同的做法：在阅读程序代码时，多半采取由上而下的方式；而本文建议了一种
+		记录阅读的方式，就是试着记录探索追踪时层层展开的树状结构。你可以视自己需要，了解的深入程度，再决定
+		要展开的层数。你更可以依据特殊的需要，只展开某个特定的节点，以探索特定的细目。
+		虽然这一系列的文章前提为「阅读他人的程序代码」，但我们真正想做的工作，并不在于彻底地详读每一行程序代码
+		的细节，而是想要透过重点式的程序代码「摘读」，达到对系统所需程度的了解。
+		阅读代码有两种模式：top-down 和 bottom-up。Top-down 模式进行到一定层次，往往会发现虽然图画了出来，
+		但还是无法了解程序再干什么。这时需要转入 bottom-up 模式，一直深入到最底层，给能了解作用的底层函数一个一个
+		的写文档。当然这时的文档是完全底层的观点。
+		然后就是不断在两个模式之间转换，不断的细化两种模式的理解。
+二、代码内按自己理解写注释，后面反复阅读反复修正
+三、画树形结构图（使用UltraEdit的列编辑模式非常好画！）
+		Top-down 模式，就是先设定一个 use case，比如说打开一个文件。然后静态跟着代码看，或者用 debugger 跟着看。
+		每次出现函数调用的时候，把函数的执行层次纪录下来，大致如下：
+		func1( )
+		   func2(  )
+		       func(  )
+		   func3(  )				
+		这种图表很随意，你可以根据自己的需要增加信息。比如我有时会把重要的「实际参数」一直标下来，这样阅读
+		深层次代码不用再回头查形式参数到底指什么。这个图的基本作用是防止在阅读深层次代码时忘记总体执行层次。
+
+
+
+usb.c的分析范例：
+
+int main (int argc, char **argv)
+ |
+ |/* random initial serial number */
+ |
+ | 接收控制参数;
+ |
+ | 改变路径到/dev/gadget;
+ |
+ |-- init_device (); /* 设备初始化 */
+ | |
+ | |-- autoconfig (); /* 自动配置端点 */
+ | |     |
+ | |     | 取得设备名称,信息;
+ | |     | 
+ | |     | 设置端点地址,和端点名;
+ | |     |-[R]
+ | | 
+ | |-- open (DEVNAME, O_RDWR); /* 打开设备文件 */
+ | | 
+ | | /* write full then high speed configs */
+ | |-- static char *build_config (char *cp, const struct usb_endpoint_descriptor **ep); 
+ | |  |         
+ | |  | 一个cp指针指向buf, 用buf来存储个描述符;
+ | |  |buf
+ | | |      ________
+ | | |     |                     |
+ | | |     | config         |
+ | | |     |                     |
+ | | |     |interface     |
+ | | |     |                     |
+ | | |     | ep               |
+ | | |     |________  |
+ | | |
+ | | |-[R]
+ | |
+ | | /* and device descriptor at the end */
+ | |
+ | |-- write (fd, &buf [0], cp - &buf [0]); /* write dev descriptor */
+ | |
+ | |--[return] 一个配置符齐全的fd;
+ | 
+ | 
+ | /* control thread, handles main event loop  */ 
+ |-- ep0_thread (&fd); /* 将init_device 后的fd 传给了它 */ 
+ | |
+ | |当有事件以信号的方式传递给它时,
+ | |它是用wait等待的sigwait (&sigs, &tmp);
+ | |
+ | |然后利用switch(tmp)来处理不同类型的事件,然后做相应的控制
+ | |
+ | |/* loop */
+ | | case GADGETFS_SETUP:
+ | |  handle_control (fd, &event [i].u.setup);
+ | |  
+ | |    static void handle_control (int fd, struct usb_ctrlrequest *setup)
+ | |     | |
+ | |     | |- struct usb_ctrlrequest 
+       | /*this structure is used to send control requests to a USB device.*/
+       |
+       | 处理标准的USB设备请求命令
+       |
+       |switch(setup->bRequest)
+       | |
+       | |
+       | |case USB_REQ_SET_CONFIGURATION:
+       | | if (setup->bRequestType != USB_DIR_OUT)
+       | |  goto stall;
+       | | if (verbose)
+       | |  fprintf (stderr, "CONFIG #%d/n", setup->wValue);
+       | |
+       | | ...
+       | | switch (setup->wValue) {
+       | | case CONFIG_VALUE:
+       | |  start_io (); /* 启动线程 */
+       | |  break;
+       | | case 0:
+       | |  stop_io ();
+       | |  break;
+ 
+ 
+
+ 
+ 
+
+static void start_io ()
+ |
+ |除ep0外,其他2个端点是以线程的方式运行的,在这里启动2线程
+ |
+ |/*create source thread*/ /In/
+ |
+ |/*create sink thread*/  /Out/
+ 
+
+/* source endpoint thread */
+static void *simple_source_thread (void *param)
+ |
+ | 配置端点 source_open /* 一个可以配置端点的宏,在下面有它的实现 */
+ |
+ |--while(status > 0) {
+   len = fill_in_buf (buf, sizeof buf);
+  if (len > 0)
+   status = write (source_fd, buf, len);
+  }
+ |
+ |
+ 
+/* sink endpoint thread */
+static void *simple_sink_thread (void *param)
+ |
+ |配置端点 sink_open /* 一个可以配置端点的宏,在下面有它的实现 */
+ |
+ |--while{
+  status = read (sink_fd, buf, sizeof buf);
+  if (status < 0)
+   break;
+  status = empty_out_buf (buf, status);
+  }
+ |
+ |
+ |
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+#define source_open(name) /
+ ep_config(name,__FUNCTION__, &fs_source_desc, &hs_source_desc)
+#define sink_open(name) /
+ ep_config(name,__FUNCTION__, &fs_sink_desc, &hs_sink_desc)
+ 
+/* you should be able to open and configure endpoints
+ * whether or not the host is connected
+ */
+static int
+ep_config (char *name, char *label,
+ struct usb_endpoint_descriptor *fs,
+ struct usb_endpoint_descriptor *hs)
+ |
+ |
+ |
+ 
+这个是linux内核中的inode.c(gadgetfs的实现)，不是很全，现在正在看。
+/*
+ * read kernel/driver/usb/gadget/inode.c
+ * 
+ * gadgetfs gadget api
+ *
+ * date : 1-6-2007
+ *
+ */
+[mynote]:
+1.gadgetfs
+2.dev_config
+3.dev operation
+4.ep_config
+5.ep_peration
+|
+|-- register_filesystem (&gadgetfs_type)
+|
+| /* when __init module_init */
+| /* gadgetfs_type object have a implant structure.*/
+|-- struct file_system_type gadgetfs_type
+|     |-- gadgetfs_get_sb
+|
+| /* when  "mount -t gadgetfs path /dev/gadget" ends up here 
+| will call gadgetfs_get_sb
+| */
+|--gadgetfs_get_sb
+|    | 
+|    |//call a system call , register gadgetfs_fill_super to kernel.
+|    |--get_sb_single (t, flags, opts, gadgetfs_fill_super)
+|
+| /* a main function, kernel will callback this function of inode.c  */ 
+| 仅仅用于探测一个UDC的设备名字，然后在/DEV/GADGET/下建立如下文件节点
+| 1.$CHIP
+| 2.$ep0
+| 3.$other ep
+|-- gadgetfs_fill_super 
+| |
+ |1.
+ |/* fake probe to determine $CHIP */
+ |--(void) usb_gadget_register_driver (&probe_driver);
+ |
+ |  sturct usb_gadget_driver probe_driver
+ |    | --gadgetfs_probe
+ |    |   | 1.[input] usb_gadget device
+ |    |   | 2.CHIP = gadget->name /* 将设备名称给CHIP */
+ |
+ |
+ |/*[??note]when*/ dev_config
+ |  |
+ |  |/* triggers gadgetfs_bind(); then we can enumerate. */
+ |         |--value = usb_gadget_register_driver (&gadgetfs_driver) 
+ |
+ |
+ |2.
+ | /*建立跟节点root inode*/
+ | gadgetfs_make_inode
+ |
+ |3. 建立ep0节点文件
+ | /* the ep0 file is named after the controller we expect;
+        |       user mode code can use it for sanity checks, like we do.
+ | */
+ | 
+ |
+ |4. 建立其他节点文件
+ |/* other endpoint files are available after hardware setup,
+ |    from binding to a controller.
+ |*/
+ 
+|
+|
+
+
+
+
+
+
+
+
+
+2.py，自己写的代码阅读实践：
+main();
+|
+|创建目录number，temp，template，recognized
+|
+|初始化numbers和rect的变量值
+|
+|下载20张验证码图片到number目录下
+|
+|--createtempfile(numbers,rect)/*对number目录下的图片文件进行解析，并在tempfile目录下创建大量模板文件*/
+||
+||--delims(image, numbers=4, index=0, rect=())/*对图片进行切割，分成一个一个的模板文件并储存在/temp/目录下*/
+||| """                                              
+|||         image为图片,                             
+|||         numbers为图片上验证码的个数,             
+|||         index没什么用,生成临时图片要用的,        
+|||         rect为要切割的矩形元组,有4个值,为左上右下
+|||"""                                          
+| 
+|"""手动整理完模板，手动将temp目录下的模板文件放入template后就可以进行验证码的识别了""" 
+| 
+|--createtemplate() /*将template目录下的模板文件名路径读入到list文件名列表中*/
+| 
+| 
+|将number目录下文件名读入到piclist列表中
+|
+|--for item in piclist:  # 循环识别图片                                
+|--recognize("./number/{0}".format(item), numbers, list, rect);/*识别图片*/
+||    """                                           
+||        filename为要识别的验证码,                 
+||        numbers为验证码上面数字的个数,            
+||        template为模板列表,                       
+||        rect,为要切割的矩形元组,有4个值,为左上右下
+||    """                                           
+||--process(filename).crop((rect));/*对number目录下的filename的验证码图片文件读入内存并进行图片处理*/
+|||
+|||从硬盘读取文件
+|||
+|||--ImageEnhance.Color(img);
+|||
+|||# 变成黑白
+|||
+|||# 提高亮度
+||| 
+|||# 提高对比度
+|||
+|||# 锐化
+|||
+|||--return enhancer;/*返回处理后的图片句柄*/
+||
+||
+||判断template目录下是否有模板文件，即模板列表是否为空
+||
+||
+||
+||
+||
+||--for i in range(numbers):/*将验证码图片进行切片，并对每一个验证码图片进行处理*/                                                                                                                                                                    
+||--    img = image.crop((int(width / numbers) * i, 0, int(width / numbers) * (i + 1), height));#yj 将图片按照左上右下坐标的方式进行剪切，所以在理论上是图片放大得越大，剪切后产生的识别误差越小
+||--    subwidth, subheight = img.size;                                                                                                                                                         
+||--    rank = [];                                                                                                                                                                              
+||--    for item in template:                                                                                                                                                                   
+||--        temp = im.open(item, "r");   /*每次都从template目录下读取模板文件，此处每次从硬盘读取的操作比较费时间，可以载入内存，提高速度*/                                                                                                                                                       
+||--        diff = 0;                                                                                                                                                                           
+||--        for w in range(subwidth):                                                                                                                                                           
+||--            for h in range(subheight):                                                                                                                                                      
+||--                if (img.getpixel((w, h)) != temp.getpixel((w, h))): /*验证码图片与模板文件比对，有一个像素点不同，diff就加1*/                                                                                                                        
+||--                    diff += 1;                                                                                                                                                              
+||--        rank.append((diff, os.path.basename(item).split(".")[0]));/*将这个验证码图片与模板文件的比对结果，即不同的像素点数和这个模板的文件名保存在rank列表中*/                                                                                                                          
+||--      rank.sort(); /*对rank列表进行排序，默认是从小到大排列*/                                                                                                                                                                           
+||--      name += str(rank[0][1]);    /*返回最相似的模板图片名称*/                                                                                                                                                            
+||
+|
+|
+|
+|
+|
+|
+|
+|
+|
